@@ -1,0 +1,97 @@
+id: basic
+version: "1.0"
+specVersion: "0.8"
+name: "basic"
+description: Print input value
+dataInputSchema: schemas/basic__main-schema.json
+extensions:
+  - extensionid: workflow-output-schema
+    outputSchema: schemas/workflow-output-schema.json
+  - extensionid: workflow-uri-definitions
+    definitions:
+      notifications: "https://raw.githubusercontent.com/rhdhorchestrator/serverless-workflows/main/workflows/shared/specs/notifications-openapi.yaml"
+functions:
+  - name: getLatestSHA
+    operation: specs/github.yaml#getLatestSHA
+  - name: createBranch
+    operation: specs/github.yaml#createBranch
+  - name: createFile
+    operation: specs/github.yaml#createFile
+  - name: createPullRequest
+    operation: specs/github.yaml#createPullRequest
+  - name: print
+    type: custom
+    operation: sysout
+  - name: successResult
+    type: expression
+    operation: |
+      {
+        "result": {
+          "message": "PR created",
+          "outputs":[
+              {
+                "key": "PR_URL",
+                "value": .pr_url.html_url,
+                "format":"link"
+              }
+            ]
+        }
+      }
+start: CreateBranch
+states:
+  - name: CreateBranch
+    type: operation
+    actions:
+      - name: "GetHeadSha"
+        functionRef:
+          refName: getLatestSHA
+          arguments:
+            owner: .owner
+            repo: .repo
+            branch: .baseBranch
+        actionDataFilter:
+          toStateData: .latestSHA
+      - name: "createBranch"
+        functionRef:
+          refName: createBranch
+          arguments:
+            owner: .owner
+            repo: .repo
+            ref: '"refs/heads/" + .targetBranch'
+            sha: .latestSHA.object.sha
+    transition: CreateFiles
+  - name: CreateFiles
+    type: foreach
+    inputCollection: "${ [{}.files[]] }"
+    iterationParam: currentFile
+    actions:
+      - name: "createFile"
+        functionRef:
+          refName: createFile
+          arguments:
+            owner: .owner
+            repo: .repo
+            path: .currentFile.path
+            message: '"Updating file: " + .currentFile.path'
+            content: .currentFile.content | @base64
+            branch: .targetBranch
+    transition: CreatePR
+  - name: CreatePR
+    type: operation
+    actions:
+      - name: "createPullRequest"
+        functionRef:
+          refName: createPullRequest
+          arguments:
+            owner: .owner
+            repo: .repo
+            title: "Automated PR"
+            body: ""
+            head: .targetBranch
+            base: .baseBranch
+        actionDataFilter:
+          toStateData: .prURL
+      - name: setOutput
+        functionRef:
+          refName: successResult
+    end: true
