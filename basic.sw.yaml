@@ -7,18 +7,15 @@ dataInputSchema: schemas/basic__main-schema.json
 extensions:
   - extensionid: workflow-output-schema
     outputSchema: schemas/workflow-output-schema.json
-  - extensionid: workflow-uri-definitions
-    definitions:
-      notifications: "https://raw.githubusercontent.com/rhdhorchestrator/serverless-workflows/main/workflows/shared/specs/notifications-openapi.yaml"
 functions:
   - name: getLatestSHA
-    operation: specs/github.yaml#getLatestSHA
+    operation: specs/github.yaml#git/get-ref
   - name: createBranch
-    operation: specs/github.yaml#createBranch
+    operation: specs/github.yaml#git/create-ref
   - name: createFile
-    operation: specs/github.yaml#createFile
+    operation: specs/github.yaml#repos/create-or-update-file-contents
   - name: createPullRequest
-    operation: specs/github.yaml#createPullRequest
+    operation: specs/github.yaml#pulls/create
   - name: print
     type: custom
     operation: sysout
@@ -29,15 +26,15 @@ functions:
         "result": {
           "message": "PR created",
           "outputs":[
-              {
-                "key": "PR_URL",
-                "value": .pr_url.html_url,
-                "format":"link"
-              }
-            ]
+            {
+              "key": "PR_URL",
+              "value": .prURL.html_url,
+              "format":"link"
+            }
+          ]
         }
       }
-start: CreateBranch
+start: "CreateBranch"
 states:
   - name: CreateBranch
     type: operation
@@ -48,7 +45,7 @@ states:
           arguments:
             owner: .owner
             repo: .repo
-            branch: .baseBranch
+            ref: '"heads/" + .baseBranch'
         actionDataFilter:
           toStateData: .latestSHA
       - name: "createBranch"
@@ -62,7 +59,7 @@ states:
     transition: CreateFiles
   - name: CreateFiles
     type: foreach
-    inputCollection: "${ [{}.files[]] }"
+    inputCollection: "${ [.scaffolderResponse.files[]] }"
     iterationParam: currentFile
     actions:
       - name: "createFile"
@@ -72,7 +69,7 @@ states:
             owner: .owner
             repo: .repo
             path: .currentFile.path
-            message: '"Updating file: " + .currentFile.path'
+            message: '"Updating file: " + .currentFile.path + " and escaped: " + .currentFile.path | split("/") | join("%2F")'
             content: .currentFile.content | @base64
             branch: .targetBranch
     transition: CreatePR
